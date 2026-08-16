@@ -1,66 +1,79 @@
 # Defects
 
 Defects found during this work, recorded with mechanism rather than only
-outcome. A defect whose mechanism is understood is worth more than a passing
-run, because the mechanism generalises and the passing run does not.
+outcome, and with the evidence that distinguishes the stated cause from the
+alternatives. Where the evidence supports a conclusion but does not establish
+it, that is said.
 
 ---
 
-## D-01 — Combined design exceeds FPGA resource budget
+## D-01 — gf180 design rule violations on a layout that is otherwise clean
 
-**Symptom.** The combined design consumes 8354 LUTs against 7680 available
-on the iCE40 HX8K. Nine percent over. Place-and-route fails.
+**Symptom.** A layout that reports a design rule count of zero on sky130A
+reports violations of rule NP.8a — minimum NPLUS area, 35 µm² — when the same
+RTL is run through the same flow against gf180mcuC.
 
-**Mechanism.** The CORDIC block accounts for 5498 LUTs — roughly two thirds
-of the budget — consistent with a fully unrolled pipeline: one physical
-stage per iteration, all stages instantiated simultaneously.
+Report path: `runs/gf180c_run/reports/signoff/drc.rpt`
+Geometry entries: 836
 
-**Discriminating evidence.** The core alone fits at 4053 LUTs. The overflow
-appears only when the CORDIC is included.
+**Evidence pointing away from a design defect.** Three independent
+observations:
 
-**Candidate resolution, not yet run.** Folding the CORDIC to a single stage
-reused across iterations trades area for latency. At the target clock rate
-the added cycles are a small fraction of the control period.
+1. The violation geometry is identical across two independent gf180 runs
+   (`gf180_run` and `gf180c_run`), with matching leading coordinates. A
+   placement-dependent design defect would be expected to vary.
+2. Every other signoff check on the same layout passes. Layout versus
+   schematic reports zero errors. XOR reports zero differences. Setup and hold
+   are met with positive margin (+16.76 and +0.74).
+3. The identical RTL, flow, utilisation and density settings produce a design
+   rule count of zero on sky130A.
 
-**Status.** Open. Resolution proposed, not implemented or measured.
+**What is not yet established.** The decisive question is whether the
+violating geometry belongs to foundry-supplied standard or filler cells rather
+than to design-authored geometry. That requires opening the layout at the
+reported coordinates and identifying the cell:
 
-<!-- TODO: verify the CORDIC LUT figure and stage count against your own
-     synthesis reports. If it is not unrolled, this mechanism is wrong. -->
+```bash
+klayout runs/gf180c_run/results/signoff/pwm.gds
+# navigate to (7.05, 88.13) µm
+```
 
----
+Until that is done, the honest statement is: a rule violation appearing on one
+process and not the other, on a layout passing every other check, with a cause
+consistent with a deck or library issue but not confirmed.
 
-## D-02 — DRC violations on gf180 traced to rule deck, not design
+**Toolchain revision.** open_pdks `0fe599b2afb6708d281543108caf8310912f54af`,
+pinned via Volare.
 
-**Symptom.** A layout that signs off cleanly on sky130 reports 836 violations
-of rule NP.8a (minimum NPLUS area) when run against gf180mcuC.
-
-**Mechanism.** A mismatch between the rule deck and the foundry's own
-standard and filler cells at the pinned open_pdks revision. The violating
-geometry belongs to cells this design did not author.
-
-**Discriminating evidence.** Three independent observations point to the deck
-rather than the design:
-
-1. The violation count is identical across two design variants. A design
-   defect would vary with the design; this does not.
-2. Every violation falls on foundry standard or filler cells, not on
-   design-authored geometry.
-3. LVS is clean, XOR is clean, and setup and hold are met with margin.
-
-**Toolchain revision.** open_pdks `0fe599b`, pinned via Volare.
-
-**Status.** Known, not a design defect. Documented rather than suppressed.
+**Status.** Open. Investigation step identified above.
 
 **Generalisation.** A failing gate does not always mean the design is wrong.
 It means a claim is unproven, and the correct response is to determine which
 claim — not to pass the gate by lowering it.
 
-<!-- TODO: confirm the revision string and rule name against your own logs. -->
+---
+
+## D-02 — Undriven output port reported by synthesis
+
+**Symptom.** The sky130 synthesis check pass reports:
+
+```
+Warning: Wire pwm.\pwm_out is used but has no driver.
+Found and reported 1 problems.
+```
+
+**Why it matters.** An output port used but undriven normally indicates a
+missing assignment or a name mismatch between the port declaration and the
+logic intended to drive it. An undriven net is optimised away and leaves no
+downstream trace, so the flow completing and timing closing does not resolve
+it.
+
+**Status.** Open, not investigated.
 
 ---
 
 ## Method note
 
-Both defects were found by running the flow to completion rather than
-stopping at the first clean result, and both were recorded before being
-resolved. Where a resolution is proposed but not measured, that is stated.
+Both entries were recorded before being resolved. Where a resolution is
+proposed but not measured, and where evidence supports a conclusion without
+establishing it, that is stated rather than smoothed over.

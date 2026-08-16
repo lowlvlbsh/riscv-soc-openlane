@@ -1,101 +1,116 @@
-# RV32I SoC — RTL to GDSII on open PDKs
+# PWM peripheral — RTL to GDSII on two open PDKs
 
-A RISC-V RV32I core and a PWM peripheral, taken from RTL through synthesis,
-place-and-route, and physical signoff on two open process design kits.
+A centre-aligned PWM peripheral carried from register-transfer level through
+synthesis, placement, routing and physical signoff on two independent process
+design kits, using an entirely open toolchain.
 
-Built with an entirely open toolchain: iverilog, Yosys, nextpnr, SymbiYosys,
-OpenLane, Magic, Netgen, KLayout.
+Alongside it: a dead-time interlock, a CORDIC Park rotator, a space-vector
+modulator, a single-cycle RV32I integer core, and fixed-point control
+firmware — all verified in simulation, none hardened.
 
-**Status:** functional core verified against the RISC-V compliance suite;
-PWM peripheral hardened to clean signoff on sky130 and gf180. Two defects
-found and documented — see [DEFECTS.md](DEFECTS.md).
+Toolchain: iverilog, Yosys, OpenLane, Magic, Netgen, KLayout.
 
 ---
 
-## Results
+## Physical implementation — `pwm.v`
 
-### RV32I core — functional verification
+| Check | sky130A | gf180mcuC |
+|---|---|---|
+| Standard cell library | sky130_fd_sc_hd | gf180mcu_fd_sc_mcu7t5v0 |
+| Clock period | 15.0 ns | 24.0 ns |
+| Cells | 85 | 97 |
+| Flip-flops | 10 | 10 |
+| Chip area | — | 2078.85 µm² |
+| Design rule check | **0 violations** | NP.8a — see [DEFECTS.md](DEFECTS.md) |
+| Layout versus schematic | **0 errors** | **0 errors** |
+| XOR difference | **0** | **0** |
+| Total negative slack | 0.00 | 0.00 |
+| Worst setup slack | +10.50 | +16.76 |
+| Worst hold slack | +0.33 | +0.74 |
 
-| Metric | Result |
-|---|---|
-| riscv-tests compliance | 14 / 14 pass |
-| Test program: sum 1..100 | 5050 (correct) |
-| Test program: fib(20) | 6765 (correct) |
-| Execution length | 693 cycles |
+Both configurations differ in exactly four fields — clock period, PDK, cell
+library, top routing layer. Core utilisation, aspect ratio, placement density,
+congestion policy and antenna handling are identical, so any difference in
+outcome is attributable to the process.
 
-### FPGA implementation — Lattice iCE40 HX8K
+**Pinned revisions**
 
-| Metric | Result |
-|---|---|
-| LUTs used (core) | 4053 |
-| LUTs available | 7680 |
-| Toolchain | Yosys + nextpnr + icestorm |
+```
+OpenLane    ff5509f65b17bfa4068d5336495ab1718987ff69
+open_pdks   0fe599b2afb6708d281543108caf8310912f54af
+```
 
-### ASIC signoff — PWM peripheral
+The flip-flop count is identical across processes, as expected — sequential
+elements come from the RTL, not the technology. The 14% difference in
+combinational cells reflects what each library offers: the sky130 mapping uses
+complex and-or-invert cells, the gf180 mapping uses simpler gates plus more
+inverters.
 
-| PDK | DRC | LVS | Status |
-|---|---|---|---|
-| sky130A | clean | clean | signed off |
-| gf180mcuC | see DEFECTS.md | clean | see DEFECTS.md |
+---
 
-PDK revisions pinned via Volare and recorded in TOOLCHAIN.md so runs are
-reproducible.
+## Simulation — verified, not hardened
 
-### Verification
+| Module | Function | Verification |
+|---|---|---|
+| `rv32i_core.v` | Single-cycle RV32I integer core | Runs a GCC-compiled image; 14 outputs checked against independently known values |
+| `deadtime_interlock.v` | Complementary gate pair with enforced blanking | 5000 random toggles; non-overlap invariant checked every cycle |
+| `cordic_park.v` | Park rotation by shift-and-add, 14 stages, no multiplier | 360 angles against real arithmetic; worst-case error in LSB |
+| `svpwm_gen.v` | Space-vector PWM by zero-sequence injection | One electrical revolution, three properties |
+| `q15.h`, `tim1_pwm.c` | Saturating fixed-point PI with anti-windup; zero-HAL timer setup | Host-side test with measured recovery ratio |
 
-- **Mutation testing** on the core testbench — faults injected into the RTL
-  to measure whether the testbench detects them, rather than inferring
-  coverage from passing tests.
-- **Formal verification** with SymbiYosys — bounded model checking and
-  induction on selected properties.
+The RV32I core implements LUI, AUIPC, JAL, JALR, all six branches, all five
+loads, all three stores, all nine register-immediate and all ten
+register-register ALU operations. It does not implement FENCE, ECALL, EBREAK,
+CSR, or the M/A/F extensions.
 
-<!-- TODO: add your mutation testing numbers.
-     e.g. "N mutants injected, M detected, detection rate X%" -->
+Testbench results are recorded in `results/` where the run has been captured.
+Where a threshold is stated in a testbench but the run output is not yet
+recorded, that is noted rather than quoted.
 
 ---
 
 ## Reproducing
 
 ```bash
-make sim        # simulation
+make sim        # iverilog
 make formal     # SymbiYosys
-make fpga       # Yosys + nextpnr, iCE40 HX8K
 make openlane PDK=sky130A
 make openlane PDK=gf180mcuC
 ```
 
-<!-- TODO: adjust to your actual build targets -->
-
 ---
 
-## Repository layout
+## Layout
 
 ```
-rtl/         core and peripheral RTL
-tb/          testbenches, mutation testing harness
-formal/      SymbiYosys property checks
-synth/       Yosys + nextpnr scripts, iCE40 constraints
+rtl/         PWM, interlock, CORDIC, SVPWM
+cpu/         RV32I core, program, linker script, startup
+fw/          STM32F405 firmware — Q15 math, zero-HAL timer
+tb/          testbenches
+spice/       circuit decks
 openlane/    per-PDK configuration
-results/     synthesis reports, signoff logs
+results/     synthesis and signoff reports
 DEFECTS.md   defects found, with mechanisms
-TOOLCHAIN.md exact tool versions
+TOOLCHAIN.md exact tool and PDK revisions
 ```
 
 ---
 
 ## Why this exists
 
-Most undergraduate RTL work stops at simulation, or at an FPGA bitstream.
-This project carries a design through to physical signoff on two different
-processes, which exposes a class of problem simulation does not: resource
-limits, rule-deck behaviour, and the difference between a design defect and
-a toolchain defect.
+Most undergraduate RTL work stops at simulation or an FPGA bitstream. This
+carries a design to physical signoff on two different processes, which exposes
+problems simulation does not: rule-deck behaviour, library differences, and
+the distinction between a design defect and a toolchain defect.
 
-The defects file is the point. A flow that produces no failures has not been
+The defects file is the point. A flow producing no failures has not been
 pushed hard enough to be informative.
 
 ---
 
-## License
+## Scope
 
-<!-- TODO: MIT or Apache-2.0 -->
+No physical measurement. No commercial EDA tool. No hardware-in-the-loop,
+thermal or efficiency work. Every figure above comes from a simulator or a
+toolchain report, and the report each came from is named in the repository
+history.
