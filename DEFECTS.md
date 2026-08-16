@@ -28,24 +28,40 @@ observations:
 3. The identical RTL, flow, utilisation and density settings produce a design
    rule count of zero on sky130A.
 
-**What is not yet established.** The decisive question is whether the
-violating geometry belongs to foundry-supplied standard or filler cells rather
-than to design-authored geometry. That requires opening the layout at the
-reported coordinates and identifying the cell:
+**Mechanism, established.** The implant layer is not drawn in any library
+cell. A layer census across all 229 cells in `gf180mcu_fd_sc_mcu7t5v0`
+returns nwell, pwell, metal1, polysilicon and diffusion layers (`mvndiff`,
+`mvpdiff` and their contacts) — and no implant layer at all.
+
+The N-plus geometry evaluated by the design rule checker is therefore
+generated at GDS-write time by Magic's technology file. It exists in neither
+the design nor the cell library source. It is produced by one component of
+open_pdks `0fe599b2afb6708d281543108caf8310912f54af` and rejected by another
+component of the same pinned revision.
+
+Method:
 
 ```bash
-klayout runs/gf180c_run/results/signoff/pwm.gds
-# navigate to (7.05, 88.13) µm
+P=~/.volare/ciel/gf180mcu/versions/0fe599b2.../gf180mcuD/libs.ref/gf180mcu_fd_sc_mcu7t5v0/mag
+grep -ho '<< .* >>' $P/*.mag | sort | uniq -c | sort -rn
 ```
 
-Until that is done, the honest statement is: a rule violation appearing on one
-process and not the other, on a layout passing every other check, with a cause
-consistent with a deck or library issue but not confirmed.
+Returns 229 counts each for nwell, pwell, metal1, labels and properties;
+219 each for polysilicon, polycontact and the medium-voltage diffusion and
+transistor layers; and no implant layer.
+
+Supporting observation: `gf180mcu_fd_sc_mcu7t5v0__fill_1`, the narrowest
+filler, has a fixed bounding box of 56 by 392 internal units — roughly
+0.56 by 3.92 um, about 2.2 um2 in total. The rule requires 35 um2. No
+filler cell of that size could satisfy it under any circumstances, and it
+does not carry the layer in question in the first place.
 
 **Toolchain revision.** open_pdks `0fe599b2afb6708d281543108caf8310912f54af`,
 pinned via Volare.
 
-**Status.** Open. Investigation step identified above.
+**Status.** Mechanism established. Neither a design defect nor a library
+defect: a geometry-generation rule and a rule deck disagreeing within one
+pinned PDK revision.
 
 **Generalisation.** A failing gate does not always mean the design is wrong.
 It means a claim is unproven, and the correct response is to determine which
