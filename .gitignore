@@ -1,0 +1,23 @@
+*.vcd
+*.out
+*.blif
+*.asc
+*.bin
+runs/
+build/
+__pycache__/
+*.pyc
+.vscode/
+*.swp
+.DS_Store
+
+# OpenLane run dirs are large; keep configs and final reports
+openlane/*/runs/
+
+# never commit proprietary or leaked material
+*.brd
+*.gr
+*.bdv
+*.fz
+*schematic*.pdf
+board.db
